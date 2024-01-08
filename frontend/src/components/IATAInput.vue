@@ -106,6 +106,11 @@ async function searchIATA() {
       )}`
     );
 
+    if (response.status !== 200) {
+      items.value = [];
+      return;
+    }
+
     items.value = await response.json();
   } catch (err) {
     items.value = [];
