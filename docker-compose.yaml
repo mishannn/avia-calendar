@@ -6,3 +6,4 @@ services:
       dockerfile: Dockerfile
     ports:
       - 8796:8796
+    command: ["-proxy", "socks5://host.docker.internal:9050"]

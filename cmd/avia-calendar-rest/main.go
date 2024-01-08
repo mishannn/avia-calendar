@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 
 	"github.com/mishannn/avia-calendar/internal/dal/aviasales"
@@ -11,7 +12,10 @@ import (
 var serverAddress = ":8796"
 
 func main() {
-	aviasalesClient, err := aviasales.NewClient("socks5://127.0.0.1:9050")
+	proxy := flag.String("proxy", "socks5://127.0.0.1:9050", "proxy for starting search")
+	flag.Parse()
+
+	aviasalesClient, err := aviasales.NewClient(*proxy)
 	if err != nil {
 		log.Panicf("can't create aviasales client: %s", err)
 	}
