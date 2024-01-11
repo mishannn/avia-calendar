@@ -12,7 +12,7 @@ import (
 var serverAddress = ":8796"
 
 func main() {
-	proxy := flag.String("proxy", "socks5://127.0.0.1:9050", "proxy for starting search")
+	proxy := flag.String("proxy", "", "proxy for starting search")
 	flag.Parse()
 
 	aviasalesClient, err := aviasales.NewClient(*proxy)

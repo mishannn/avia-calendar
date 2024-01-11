@@ -21,7 +21,7 @@ func NewService(aviasalesClient *aviasales.Client) *Service {
 	}
 }
 
-func (s *Service) findCheapestTicket(from string, to string, date time.Time, maxTransfersCount int, maxTransferDuration int) (*Ticket, error) {
+func (s *Service) findTickets(from string, to string, date time.Time, maxTransfersCount int, maxTransferDuration int) ([]Ticket, error) {
 	startSearchReqBody := aviasales.SearchStartRequestBody{
 		SearchParams: aviasales.SearchParams{
 			Directions: []aviasales.Direction{
@@ -57,7 +57,7 @@ func (s *Service) findCheapestTicket(from string, to string, date time.Time, max
 	searchResultsReqBody := aviasales.SearchResultsRequestBody{
 		SearchID: startSearchRespBody.SearchID,
 		Order:    "cheapest",
-		Limit:    1,
+		Limit:    3,
 		Filters: map[string]any{
 			"baggage":         []string{"full_baggage"},
 			"transfers_count": transfersCountValues,
@@ -89,39 +89,40 @@ func (s *Service) findCheapestTicket(from string, to string, date time.Time, max
 		time.Sleep(1 * time.Second)
 	}
 
-	return findCheapestTicketInChunk(from, to, date, searchResultsRespBody[0])
+	return getTicketsFromChunk(from, to, date, searchResultsRespBody[0])
 }
 
-func (s *Service) FindCheapestPrices(from string, to string, startDate time.Time, endDate time.Time, maxTransfersCount int, maxTransferDuration int) (<-chan CheapestPriceForDate, error) {
-	cheapestPricesCh := make(chan CheapestPriceForDate)
+type TicketsEvent struct {
+	Date    time.Time
+	Tickets []Ticket
+	Error   error
+}
+
+func (s *Service) FindTickets(from string, to string, startDate time.Time, endDate time.Time, maxTransfersCount int, maxTransferDuration int) (<-chan TicketsEvent, error) {
+	cheapestPricesCh := make(chan TicketsEvent)
 
 	go func() {
-		fetcher := func(wg *sync.WaitGroup, date time.Time, output chan<- CheapestPriceForDate) {
+		fetcher := func(wg *sync.WaitGroup, date time.Time, output chan<- TicketsEvent) {
 			defer wg.Done()
 
 			cacheKey := fmt.Sprintf("%s:%s:%s:%d:%d", from, to, date.Format(time.DateOnly), maxTransfersCount, maxTransferDuration)
 
-			cachedItem, ok := s.cacheStorage.Get(cacheKey)
-			if ok {
-				output <- cachedItem.(CheapestPriceForDate)
+			if cachedTickets, ok := s.cacheStorage.Get(cacheKey); ok {
+				output <- TicketsEvent{Date: date, Tickets: cachedTickets.([]Ticket)}
 				return
 			}
 
-			cheapestTicket, err := s.findCheapestTicket(from, to, date, maxTransfersCount, maxTransferDuration)
+			tickets, err := s.findTickets(from, to, date, maxTransfersCount, maxTransferDuration)
 			if err != nil {
-				output <- CheapestPriceForDate{Date: date, Error: err}
+				output <- TicketsEvent{Date: date, Error: err}
 				return
 			}
 
-			result := CheapestPriceForDate{
-				Date:            date,
-				Price:           cheapestTicket.Price,
-				TransfersAmount: cheapestTicket.TransfersAmount,
-				SearchLink:      cheapestTicket.SearchLink,
+			s.cacheStorage.Set(cacheKey, tickets, 0)
+			output <- TicketsEvent{
+				Date:    date,
+				Tickets: tickets,
 			}
-
-			s.cacheStorage.Set(cacheKey, result, 0)
-			output <- result
 		}
 
 		var wg sync.WaitGroup
@@ -142,4 +143,8 @@ func (s *Service) FindCheapestPrices(from string, to string, startDate time.Time
 
 func (s *Service) SearchIATA(filter string) (aviasales.SearchIATAResponseBody, error) {
 	return s.aviasalesClient.SearchIATA(filter)
+}
+
+func (s *Service) GetAirlines() (aviasales.GetAirlinesResponseBody, error) {
+	return s.aviasalesClient.GetAirlines()
 }

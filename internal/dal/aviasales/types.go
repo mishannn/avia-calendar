@@ -64,10 +64,10 @@ type TransfersDuration struct {
 type SearchResultsResponseBody []SearchResultsResponseChunk
 
 type SearchResultsResponseChunk struct {
-	Agents     map[string]Agent   `json:"agents"`
-	Airlines   map[string]Airline `json:"airlines"`
-	FlightLegs []FlightLeg        `json:"flight_legs"`
-	Tickets    []Ticket           `json:"tickets"`
+	Agents     map[string]Agent       `json:"agents"`
+	Airlines   map[string]interface{} `json:"airlines"`
+	FlightLegs []FlightLeg            `json:"flight_legs"`
+	Tickets    []Ticket               `json:"tickets"`
 }
 
 type Agent struct {
@@ -150,4 +150,15 @@ type SearchResultsResponseBodyElement struct {
 	Code        string `json:"code"`
 	Name        string `json:"name"`
 	CountryName string `json:"country_name"`
+}
+
+// Airlines
+
+type GetAirlinesResponseBody []GetAirlinesResponseBodyElement
+
+type GetAirlinesResponseBodyElement struct {
+	NameTranslations map[string]string `json:"name_translations"`
+	Code             string            `json:"code"`
+	Name             string            `json:"name"`
+	IsLowcost        bool              `json:"is_lowcost"`
 }

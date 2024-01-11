@@ -11,7 +11,7 @@ import (
 	"github.com/mishannn/avia-calendar/internal/views/rest/resttypes"
 )
 
-type FindCheapestTicketParams struct {
+type FindCheapestTicketsParams struct {
 	From                string             `query:"from" validate:"required"`
 	To                  string             `query:"to" validate:"required"`
 	StartDate           resttypes.DateOnly `query:"start_date" validate:"required"`
@@ -20,12 +20,18 @@ type FindCheapestTicketParams struct {
 	MaxTransferDuration int                `query:"max_transfer_duration"`
 }
 
-type FindCheapestTicketResponseEvent struct {
-	Date            resttypes.DateOnly `json:"date"`
-	TransfersAmount int                `json:"transfers_amount"`
-	Price           float64            `json:"price"`
-	SearchLink      string             `json:"search_link"`
-	Error           string             `json:"error"`
+type FindCheapestTicketsResponseFlight struct {
+	From          string `json:"from"`
+	DerartureTime string `json:"departure_time"`
+	To            string `json:"to"`
+	ArrivalTime   string `json:"arrival_time"`
+	Airline       string `json:"airline"`
+}
+
+type FindCheapestTicketsResponseEvent struct {
+	Date    resttypes.DateOnly `json:"date"`
+	Tickets []resttypes.Ticket `json:"tickets"`
+	Error   string             `json:"error"`
 }
 
 // Cheapest Prices Page
@@ -35,7 +41,7 @@ func (s *Server) findCheapestTickets(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
 	c.Response().WriteHeader(http.StatusOK)
 
-	var params FindCheapestTicketParams
+	var params FindCheapestTicketsParams
 	if err := c.Bind(&params); err != nil {
 		writeRequestErrorEvent(c, fmt.Errorf("can't bind params: %w", err))
 		return nil
@@ -69,32 +75,72 @@ func (s *Server) findCheapestTickets(c echo.Context) error {
 		return nil
 	}
 
-	pricesCh, err := s.ticketsService.FindCheapestPrices(params.From, params.To, startDate, endDate, params.MaxTransfersCount, params.MaxTransferDuration)
+	airlineNames := make(map[string]string)
+	airlines, err := s.ticketsService.GetAirlines()
+	if err != nil {
+		writeRequestErrorEvent(c, fmt.Errorf("can't get airlines: %w", err))
+		return nil
+	}
+	for _, airline := range airlines {
+		if airline.Name != "" {
+			airlineNames[airline.Code] = airline.Name
+		} else if airline.NameTranslations["en"] != "" {
+			airlineNames[airline.Code] = airline.NameTranslations["en"]
+		}
+	}
+
+	ticketsEventsCh, err := s.ticketsService.FindTickets(params.From, params.To, startDate, endDate, params.MaxTransfersCount, params.MaxTransferDuration)
 	if err != nil {
 		writeRequestErrorEvent(c, fmt.Errorf("can't start multisearch: %w", err))
 		return nil
 	}
 
-	for price := range pricesCh {
-		event := FindCheapestTicketResponseEvent{
-			Date: resttypes.DateOnly(price.Date),
+	for ticketsEvent := range ticketsEventsCh {
+		event := FindCheapestTicketsResponseEvent{
+			Date: resttypes.DateOnly(ticketsEvent.Date),
 		}
 
-		if price.Error != nil {
-			event.Error = price.Error.Error()
+		if ticketsEvent.Error != nil {
+			event.Error = ticketsEvent.Error.Error()
 		} else {
-			event.TransfersAmount = price.TransfersAmount
-			event.Price = price.Price
-			event.SearchLink = price.SearchLink
+			event.Tickets = make([]resttypes.Ticket, 0, len(ticketsEvent.Tickets))
+			for _, ticket := range ticketsEvent.Tickets {
+				flights := make([]resttypes.Flight, 0, len(ticket.Flights))
+
+				for _, flight := range ticket.Flights {
+					var airlineName string
+					if name, ok := airlineNames[flight.AirlineCode]; ok {
+						airlineName = name
+					} else {
+						airlineName = flight.AirlineCode
+					}
+
+					flights = append(flights, resttypes.Flight{
+						From:          flight.From,
+						DerartureTime: flight.DerartureTime,
+						To:            flight.To,
+						ArrivalTime:   flight.ArrivalTime,
+						AirlineName:   airlineName,
+					})
+				}
+
+				event.Tickets = append(event.Tickets, resttypes.Ticket{
+					SearchLink:      ticket.SearchLink,
+					Date:            resttypes.DateOnly(ticket.Date),
+					TransfersAmount: ticket.TransfersAmount,
+					Price:           ticket.Price,
+					Flights:         flights,
+				})
+			}
 		}
 
 		eventJSON, err := json.Marshal(event)
 		if err != nil {
-			writeMarshalErrorEvent(c, fmt.Errorf("can't marshal event for date %s: %w", price.Date.Format("Mon, 02 Jan 2006"), err))
+			writeMarshalErrorEvent(c, fmt.Errorf("can't marshal event for date %s: %w", ticketsEvent.Date.Format("Mon, 02 Jan 2006"), err))
 			continue
 		}
 
-		writeEvent(c, "price", eventJSON)
+		writeEvent(c, "tickets", eventJSON)
 	}
 
 	writeCloseEvent(c)

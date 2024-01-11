@@ -26,7 +26,7 @@
       <PriceCard
         v-for="result in sortedResults"
         :key="result.date"
-        :price="result"
+        :tickets-event="result"
         :from="from"
         :to="to"
         :price-limit="priceLimit"
@@ -39,7 +39,7 @@
 import PriceCard from "@/components/PriceCard.vue";
 import { useTitle } from "@vueuse/core";
 import { useRouteQuery } from "@vueuse/router";
-import { mean } from "mathjs";
+import { mean, median, quantileSeq } from "mathjs";
 import { onUnmounted, ref, watch, computed } from "vue";
 import { useRouter } from "vue-router";
 
@@ -78,7 +78,7 @@ watch(
 );
 
 const loading = ref(true);
-const results = ref([]);
+const ticketsEvents = ref([]);
 const errors = ref([]);
 
 const searchParams = new URLSearchParams({
@@ -94,16 +94,16 @@ const eventSource = new EventSource(
   `/api/v1/find-cheapest-tickets?${searchParams.toString()}`
 );
 
-eventSource.addEventListener("price", (event) => {
-  let price = undefined;
+eventSource.addEventListener("tickets", (event) => {
+  let ticketsEvent = undefined;
   try {
-    price = JSON.parse(event.data);
+    ticketsEvent = JSON.parse(event.data);
   } catch (err) {
     errors.value = [...errors.value, err.message];
     return;
   }
 
-  results.value = [...results.value, price];
+  ticketsEvents.value = [...ticketsEvents.value, ticketsEvent];
 });
 
 eventSource.addEventListener("marshalerror", (event) => {
@@ -132,26 +132,32 @@ onUnmounted(() => {
 });
 
 const priceLimit = computed(() => {
-  const arr = results.value
-    .filter((result) => !!result.price)
-    .map((result) => result.price);
+  const arr = ticketsEvents.value.reduce((prices, item) => {
+    return [...prices, ...item.tickets.map((ticket) => ticket.price)];
+  }, []);
 
   if (arr.length == 0) {
     return 0;
   }
 
-  return mean(arr);
+  return mean(mean(arr));
 });
 
 const sortBy = ref("Date");
 const sortedResults = computed(() => {
-  return [...results.value].sort((a, b) => {
+  return [...ticketsEvents.value].sort((a, b) => {
     if (sortBy.value == "Date") {
       return a.date.localeCompare(b.date);
     }
 
     if (sortBy.value == "Price") {
-      return a.price - b.price;
+      if (a.tickets[0] && b.tickets[0]) {
+        return a.tickets[0].price - b.tickets[0].price;
+      } else if (!a.tickets[0]) {
+        return 1
+      } else {
+        return -1
+      }
     }
 
     return 0;

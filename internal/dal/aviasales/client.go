@@ -26,7 +26,9 @@ func NewClient(proxy string) (*Client, error) {
 	httpClientWithProxy := resty.New()
 	httpClientWithProxy.SetHeader("User-Agent", userAgent)
 	httpClientWithProxy.SetRedirectPolicy(resty.NoRedirectPolicy())
-	httpClientWithProxy.SetProxy(proxy)
+	if proxy != "" {
+		httpClientWithProxy.SetProxy(proxy)
+	}
 	httpClientWithProxy.SetCookieJar(nil)
 
 	return &Client{
@@ -132,6 +134,26 @@ func (ac *Client) SearchIATA(filter string) (SearchIATAResponseBody, error) {
 	}
 
 	var respBody SearchIATAResponseBody
+	err = json.Unmarshal(resp.Body(), &respBody)
+	if err != nil {
+		return nil, fmt.Errorf("can't unmarshal response body: %w", err)
+	}
+
+	return respBody, nil
+}
+
+func (ac *Client) GetAirlines() (GetAirlinesResponseBody, error) {
+	resp, err := ac.httpClient.R().
+		Get("https://api.travelpayouts.com/data/ru/airlines.json")
+	if err != nil {
+		return nil, fmt.Errorf("can't send request: %w", err)
+	}
+
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("server sent code %d, but expected 200: %s", resp.StatusCode(), resp.Body())
+	}
+
+	var respBody GetAirlinesResponseBody
 	err = json.Unmarshal(resp.Body(), &respBody)
 	if err != nil {
 		return nil, fmt.Errorf("can't unmarshal response body: %w", err)

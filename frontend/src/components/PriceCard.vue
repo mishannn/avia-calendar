@@ -4,30 +4,17 @@
       <span :style="{ color: titleColor }">{{ title }}</span>
     </template>
     <v-card-text>
-      <v-alert v-if="price.error" :text="price.error" type="warning" />
-      <div
-        v-else
-        style="
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          column-gap: 11px;
-        "
-      >
-        <LabelledValue label="Price">
-          <span :style="{ color: priceColor }">{{ price.price }} RUB</span>
-        </LabelledValue>
-        <LabelledValue label="Transfers">
-          {{ price.transfers_amount }}
-        </LabelledValue>
-        <LabelledValue label="Aviasales">
-          <a
-            :href="price.search_link"
-            target="_blank"
-            style="text-decoration: none; color: #1867c0"
-          >
-            Open
-          </a>
-        </LabelledValue>
+      <v-alert
+        v-if="ticketsEvent.error"
+        :text="ticketsEvent.error"
+        type="warning"
+      />
+      <div v-else style="display: flex; flex-direction: column; row-gap: 16px;">
+        <PriceCardItem
+          v-for="ticket in ticketsEvent.tickets"
+          :ticket="ticket"
+          :price-limit="priceLimit"
+        />
       </div>
     </v-card-text>
   </v-card>
@@ -37,7 +24,7 @@
 import { format, isWeekend } from "date-fns";
 import { computed } from "vue";
 import { defineProps } from "vue";
-import LabelledValue from "@/components/LabelledValue.vue";
+import PriceCardItem from "@/components/PriceCardItem.vue";
 
 const props = defineProps({
   from: {
@@ -48,7 +35,7 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  price: {
+  ticketsEvent: {
     type: Object,
     required: true,
   },
@@ -59,7 +46,7 @@ const props = defineProps({
 });
 
 const date = computed(() => {
-  return new Date(props.price.date);
+  return new Date(props.ticketsEvent.date);
 });
 
 const title = computed(() => {
@@ -68,9 +55,5 @@ const title = computed(() => {
 
 const titleColor = computed(() => {
   return isWeekend(date.value) ? "#c50000" : undefined;
-});
-
-const priceColor = computed(() => {
-  return props.price.price <= props.priceLimit ? "#089c08" : undefined;
 });
 </script>

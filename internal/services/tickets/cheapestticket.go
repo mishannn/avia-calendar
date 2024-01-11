@@ -12,18 +12,27 @@ import (
 	"github.com/mishannn/avia-calendar/internal/dal/aviasales"
 )
 
+type Flight struct {
+	From          string
+	DerartureTime string
+	To            string
+	ArrivalTime   string
+	AirlineCode   string
+}
+
 type Ticket struct {
 	SearchLink      string
 	Date            time.Time
 	TransfersAmount int
 	Price           float64
+	Flights         []Flight
 }
 
 func generateTicketSignature(ticket aviasales.Ticket, chunk aviasales.SearchResultsResponseChunk) string {
 	airports := make([]string, 0)
 	timestamps := make([]string, 0)
 
-	var airlineName string
+	var airlineCode string
 
 	for legIndex, flightIndex := range ticket.Segments[0].Flights {
 		flight := chunk.FlightLegs[flightIndex]
@@ -31,7 +40,7 @@ func generateTicketSignature(ticket aviasales.Ticket, chunk aviasales.SearchResu
 		if legIndex == 0 {
 			airports = append(airports, flight.Origin)
 			timestamps = append(timestamps, fmt.Sprint(flight.DepartureUnixTimestamp))
-			airlineName = flight.OperatingCarrierDesignator.AirlineID
+			airlineCode = flight.OperatingCarrierDesignator.AirlineID
 		} else if airports[len(airports)-1] != flight.Origin {
 			airports = append(airports, flight.Origin)
 		}
@@ -42,11 +51,12 @@ func generateTicketSignature(ticket aviasales.Ticket, chunk aviasales.SearchResu
 		}
 	}
 
-	return fmt.Sprintf("%s%s%s", airlineName, strings.Join(timestamps, ""), strings.Join(airports, ""))
+	return fmt.Sprintf("%s%s%s", airlineCode, strings.Join(timestamps, ""), strings.Join(airports, ""))
 }
 
 func getAgentLabel(proposal aviasales.TicketProposal, chunk aviasales.SearchResultsResponseChunk) string {
-	labels := chunk.Agents[fmt.Sprintf("%d", proposal.AgentID)].Label
+	agentIDStr := fmt.Sprintf("%d", proposal.AgentID)
+	labels := chunk.Agents[agentIDStr].Label
 
 	if label, ok := labels["ru"]; ok {
 		return label.Default
@@ -56,7 +66,7 @@ func getAgentLabel(proposal aviasales.TicketProposal, chunk aviasales.SearchResu
 		return label.Default
 	}
 
-	return ""
+	return agentIDStr
 }
 
 func generateSearchLink(from string, to string, date time.Time, proposal aviasales.TicketProposal, ticket aviasales.Ticket, chunk aviasales.SearchResultsResponseChunk) string {
@@ -74,6 +84,24 @@ func generateSearchLink(from string, to string, date time.Time, proposal aviasal
 
 func getTransfersAmount(ticket aviasales.Ticket) int {
 	return len(ticket.Segments[0].Transfers)
+}
+
+func getFlights(ticket aviasales.Ticket, chunk aviasales.SearchResultsResponseChunk) []Flight {
+	flights := make([]Flight, 0, len(ticket.Segments[0].Flights))
+
+	for _, flightIndex := range ticket.Segments[0].Flights {
+		aviasalesFlight := chunk.FlightLegs[flightIndex]
+
+		flights = append(flights, Flight{
+			From:          aviasalesFlight.Origin,
+			DerartureTime: aviasalesFlight.LocalDepartureDateTime,
+			To:            aviasalesFlight.Destination,
+			ArrivalTime:   aviasalesFlight.LocalArrivalDateTime,
+			AirlineCode:   aviasalesFlight.OperatingCarrierDesignator.AirlineID,
+		})
+	}
+
+	return flights
 }
 
 func createTicketFromAviasalesTicket(from string, to string, date time.Time, ticket aviasales.Ticket, chunk aviasales.SearchResultsResponseChunk) (*Ticket, error) {
@@ -96,28 +124,21 @@ func createTicketFromAviasalesTicket(from string, to string, date time.Time, tic
 		Date:            date,
 		TransfersAmount: getTransfersAmount(ticket),
 		Price:           cheapestProposal.Price.Value,
+		Flights:         getFlights(ticket, chunk),
 	}, nil
 }
 
-func findCheapestTicketInChunk(from string, to string, date time.Time, chunk aviasales.SearchResultsResponseChunk) (*Ticket, error) {
-	var cheapestTicket *Ticket
+func getTicketsFromChunk(from string, to string, date time.Time, chunk aviasales.SearchResultsResponseChunk) ([]Ticket, error) {
+	tickets := make([]Ticket, 0, len(chunk.Tickets))
 
-	cheapestPrice := math.MaxFloat64
 	for _, aviasalesTicket := range chunk.Tickets {
 		ticket, err := createTicketFromAviasalesTicket(from, to, date, aviasalesTicket, chunk)
 		if err != nil {
 			return nil, fmt.Errorf("can't create cheapest ticket from aviasales ticket: %w", err)
 		}
 
-		if ticket.Price < cheapestPrice {
-			cheapestTicket = ticket
-			cheapestPrice = ticket.Price
-		}
+		tickets = append(tickets, *ticket)
 	}
 
-	if cheapestPrice == math.MaxFloat64 {
-		return nil, errors.New("can't find cheapest price")
-	}
-
-	return cheapestTicket, nil
+	return tickets, nil
 }
