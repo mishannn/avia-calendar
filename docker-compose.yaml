@@ -1,12 +1,24 @@
 services:
   avia-calendar:
     restart: always
-    build:
-      context: ./
-      dockerfile: Dockerfile
-    ports:
-      - 8796:8796
+    build: ./
     command: ["-proxy", "socks5://tor:9050"]
+    networks:
+      - gateway
+      - default
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.avia-calendar.rule=Host(`avia-calendar.dynlink.online`)
+      - traefik.http.services.avia-calendar.loadbalancer.server.port=8796
   tor:
     restart: always
     build: ./tor
+    networks:
+      - default
+
+networks:
+  gateway:
+    name: gateway
+    external: true
+  default:
+    internal: false

@@ -7,4 +7,8 @@ COPY ./torrc /etc/tor/torrc
 
 EXPOSE 9050
 
+RUN groupadd tor && useradd -g tor tor
+USER tor
+WORKDIR /home/tor
+
 ENTRYPOINT ["tor"]
