@@ -4,10 +4,11 @@ services:
     build: ./
     command: ["-proxy", "socks5://tor:9050"]
     networks:
-      - gateway
+      - traefik-gateway
       - default
     labels:
       - traefik.enable=true
+      - traefik.docker.network=traefik-gateway
       - traefik.http.routers.avia-calendar.rule=Host(`avia-calendar.dynlink.online`)
       - traefik.http.services.avia-calendar.loadbalancer.server.port=8796
   tor:
@@ -17,7 +18,6 @@ services:
       - default
 
 networks:
-  gateway:
+  traefik-gateway:
     external: true
   default:
-    internal: false
